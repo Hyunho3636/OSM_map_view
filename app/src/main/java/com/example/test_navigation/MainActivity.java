@@ -1,159 +1,139 @@
 package com.example.test_navigation;
 
-import android.Manifest;
-import android.content.Context;
-import android.content.pm.PackageManager;
-import android.location.Location;
-import android.location.LocationListener;
-import android.location.LocationManager;
 import android.os.Bundle;
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 import org.osmdroid.api.IMapController;
 import org.osmdroid.config.Configuration;
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory;
 import org.osmdroid.util.GeoPoint;
 import org.osmdroid.views.MapView;
-import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider;
-import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay;
+import org.osmdroid.views.overlay.Marker;
 import android.widget.Toast;
-import org.osmdroid.util.BoundingBox;
-import android.view.View;
 import android.widget.Button;
+import android.widget.ImageButton;
 
-public class MainActivity extends AppCompatActivity implements LocationListener {
+public class MainActivity extends AppCompatActivity {
 
-    private static final int PERMISSION_REQUEST_CODE = 1;
     private MapView map;
-    private MyLocationNewOverlay myLocationOverlay;
-    private LocationManager locationManager;
-    private boolean isFirstLocationUpdate = true;
     private Button btnMyLocation;
+    private ImageButton btnRotateToggle;
+    private boolean isMapRotationEnabled = false;
+    private float heading = 90f;
+    private GeoPoint currentLocation;
+    private Marker locationMarker;
+
+    // 조이스틱 버튼 추가
+    private Button btnUp, btnDown, btnLeft, btnRight;
+
+    // 2m 이동을 위한 상수 (위도 1도 = 약 111km, 경도 1도 = 약 88km)
+    private static final double LATITUDE_DELTA = 2.0 / 111000.0;  // 위도 2m
+    private static final double LONGITUDE_DELTA = 2.0 / 88000.0;  // 경도 2m
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        // osmdroid 설정 초기화
-        Configuration.getInstance().load(this, getPreferences(Context.MODE_PRIVATE));
-
+        Configuration.getInstance().load(this, getPreferences(MODE_PRIVATE));
         setContentView(R.layout.activity_main);
 
+        initializeMap();
+        initializeButtons();
+        setInitialLocation();
+    }
+
+    private void initializeMap() {
         map = findViewById(R.id.map);
         map.setTileSource(TileSourceFactory.MAPNIK);
+        map.setMultiTouchControls(true);
+        map.getZoomController().setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER);
 
-        // 지도 이동 영역 제한
-        double maxLatitude = 38.625;
-        double minLatitude = 33.112;
-        double maxLongitude = 132.000;
-        double minLongitude = 124.611;
-
-        map.setScrollableAreaLimitLatitude(maxLatitude, minLatitude, 0);
-        map.setScrollableAreaLimitLongitude(minLongitude, maxLongitude, 0);
-
-        // 최소 줌 레벨 설정
+        map.setScrollableAreaLimitLatitude(38.625, 33.112, 0);
+        map.setScrollableAreaLimitLongitude(124.611, 132.000, 0);
         map.setMinZoomLevel(10.0);
+        map.setMaxZoomLevel(22.0);
 
-        // 지도 컨트롤러 설정
         IMapController mapController = map.getController();
-        mapController.setZoom(12.0);
-
-        // 위치 오버레이 설정
-        myLocationOverlay = new MyLocationNewOverlay(new GpsMyLocationProvider(this), map);
-        myLocationOverlay.enableMyLocation();
-        map.getOverlays().add(myLocationOverlay);
-
-        // 버튼 초기화 및 클릭 리스너 설정
-        btnMyLocation = findViewById(R.id.btnMyLocation);
-        btnMyLocation.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                moveToMyLocation();
-            }
-        });
-
-        // 위치 권한 확인 및 요청
-        checkLocationPermission();
-    }
-
-    private void checkLocationPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
-                    PERMISSION_REQUEST_CODE);
-        } else {
-            startLocationUpdates();
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                startLocationUpdates();
-            }
-        }
-    }
-
-    private void startLocationUpdates() {
-        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000, 10, this);
-
-            // 마지막으로 알려진 위치로 지도 이동
-            Location lastKnownLocation = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-            if (lastKnownLocation != null) {
-                updateMapLocation(lastKnownLocation);
-            } else {
-                // GPS 위치를 얻지 못한 경우 네트워크 위치 시도
-                lastKnownLocation = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-                if (lastKnownLocation != null) {
-                    updateMapLocation(lastKnownLocation);
-                } else {
-                    // 위치를 얻지 못한 경우 사용자에게 알림
-                    Toast.makeText(this, "현재 위치를 찾을 수 없습니다.", Toast.LENGTH_SHORT).show();
-                }
-            }
-        }
-    }
-
-    @Override
-    public void onLocationChanged(Location location) {
-        updateMapLocation(location);
-    }
-
-    private void updateMapLocation(Location location) {
-        GeoPoint currentLocation = new GeoPoint(location.getLatitude(), location.getLongitude());
-        IMapController mapController = map.getController();
-
-        mapController.animateTo(currentLocation);
         mapController.setZoom(18.5);
-        Toast.makeText(this, "현재 위치로 이동했습니다.", Toast.LENGTH_SHORT).show();
+
+        locationMarker = new Marker(map);
+        map.getOverlays().add(locationMarker);
+    }
+
+    private void initializeButtons() {
+        btnMyLocation = findViewById(R.id.btnMyLocation);
+        btnRotateToggle = findViewById(R.id.btnRotateToggle);
+
+        btnMyLocation.setOnClickListener(v -> moveToMyLocation());
+        btnRotateToggle.setOnClickListener(v -> toggleMapRotation());
+
+        // 조이스틱 버튼 초기화
+        btnUp = findViewById(R.id.btnUp);
+        btnDown = findViewById(R.id.btnDown);
+        btnLeft = findViewById(R.id.btnLeft);
+        btnRight = findViewById(R.id.btnRight);
+
+        // 조이스틱 버튼에 리스너 추가
+        btnUp.setOnClickListener(v -> moveLocation(LATITUDE_DELTA, 0));
+        btnDown.setOnClickListener(v -> moveLocation(-LATITUDE_DELTA, 0));
+        btnLeft.setOnClickListener(v -> moveLocation(0, -LONGITUDE_DELTA));
+        btnRight.setOnClickListener(v -> moveLocation(0, LONGITUDE_DELTA));
+    }
+
+    private void setInitialLocation() {
+        // 초기 위치 설정 (예: 서울시청)
+        currentLocation = new GeoPoint(37.5665, 126.9780);
+        updateMapLocation();
+    }
+
+    private void updateMapLocation() {
+        map.getController().animateTo(currentLocation);
+        locationMarker.setPosition(currentLocation);
+        locationMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
+        map.invalidate();
     }
 
     private void moveToMyLocation() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            Location lastKnownLocation = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-            if (lastKnownLocation != null) {
-                updateMapLocation(lastKnownLocation);
-            } else {
-                lastKnownLocation = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-                if (lastKnownLocation != null) {
-                    updateMapLocation(lastKnownLocation);
-                } else {
-                    Toast.makeText(this, "현재 위치를 찾을 수 없습니다.", Toast.LENGTH_SHORT).show();
-                }
-            }
+        updateMapLocation();
+    }
+
+    private void toggleMapRotation() {
+        isMapRotationEnabled = !isMapRotationEnabled;
+        if (isMapRotationEnabled) {
+            enableMapRotation();
         } else {
-            Toast.makeText(this, "위치 권한이 필요합니다.", Toast.LENGTH_SHORT).show();
+            disableMapRotation();
         }
     }
 
-    // 다른 LocationListener 메서드들은 필요에 따라 구현하세요
+    private void enableMapRotation() {
+        updateMapRotation();
+        Toast.makeText(this, "지도 회전이 활성화되었습니다.", Toast.LENGTH_SHORT).show();
+    }
+
+    private void disableMapRotation() {
+        map.setMapOrientation(0);
+        btnRotateToggle.setRotation(0);
+        Toast.makeText(this, "지도가 정북으로 고정되었습니다.", Toast.LENGTH_SHORT).show();
+    }
+
+    private void updateMapRotation() {
+        if (isMapRotationEnabled) {
+            map.setMapOrientation(heading);
+            btnRotateToggle.setRotation(heading);
+        }
+    }
+
+    public void setHeading(float newHeading) {
+        heading = newHeading;
+        if (isMapRotationEnabled) {
+            updateMapRotation();
+        }
+    }
+
+    // 새로운 메서드: 사용자 위치 변경
+    public void setUserLocation(double latitude, double longitude) {
+        currentLocation = new GeoPoint(latitude, longitude);
+        updateMapLocation();
+    }
 
     @Override
     protected void onResume() {
@@ -165,5 +145,12 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
     protected void onPause() {
         super.onPause();
         map.onPause();
+    }
+
+    // 새로운 메서드: 위치 이동
+    private void moveLocation(double latDelta, double lonDelta) {
+        double newLat = currentLocation.getLatitude() + latDelta;
+        double newLon = currentLocation.getLongitude() + lonDelta;
+        setUserLocation(newLat, newLon);
     }
 }

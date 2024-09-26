@@ -76,4 +76,32 @@
 
     </LinearLayout>
 
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentEnd="true"
+        android:orientation="vertical"
+        android:layout_margin="16dp">
+
+        <Button
+            android:id="@+id/btnAddMarkers"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="랜덤 마커 추가"/>
+
+        <Button
+            android:id="@+id/btnClearMarkers"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="마커 삭제"/>
+
+    </LinearLayout>
+
+    <Button
+    android:id="@+id/btnClearPath"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="경로 초기화" />
+
 </RelativeLayout>

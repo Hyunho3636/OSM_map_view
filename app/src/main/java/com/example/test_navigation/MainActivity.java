@@ -2,6 +2,7 @@ package com.example.test_navigation;
 
 import android.graphics.Color;
 import android.os.Bundle;
+import android.util.Log;
 import androidx.appcompat.app.AppCompatActivity;
 import org.osmdroid.api.IMapController;
 import org.osmdroid.config.Configuration;
@@ -16,15 +17,10 @@ import android.widget.ImageButton;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
-import org.osmdroid.views.CustomZoomButtonsController;
-import org.osmdroid.events.MapListener;
-import org.osmdroid.events.ScrollEvent;
-import org.osmdroid.events.ZoomEvent;
-import org.osmdroid.views.MapController;
-import android.view.animation.AccelerateDecelerateInterpolator;
-import android.animation.ValueAnimator;
 import android.graphics.drawable.Drawable;
 import androidx.core.content.ContextCompat;
+
+import static android.content.ContentValues.TAG;
 
 /**
  * MainActivity 클래스는 지도 기반 네비게이션 앱의 주요 활동을 관리합니다.
@@ -33,13 +29,20 @@ import androidx.core.content.ContextCompat;
 public class MainActivity extends AppCompatActivity {
 
     private MapView map;
-    private Button btnMyLocation;
+    private Button btnHvLocation;
     private ImageButton btnRotateToggle;
     private boolean isMapRotationEnabled = false;
     private float heading = 90f;
     private GeoPoint currentLocation;
     private Marker locationMarker;
+    private static final Double ZOOM_DEFAULT = 19.5;
+    private Polyline pathPolyline;
+    private List<GeoPoint> pathPoints;
+    private Button btnClearPath;
 
+    private Marker frontRvMarker;
+
+    // 삭제 예정
     // 조이스틱 버튼 추가
     private Button btnUp, btnDown, btnLeft, btnRight;
 
@@ -51,12 +54,7 @@ public class MainActivity extends AppCompatActivity {
     private List<Marker> randomMarkers = new ArrayList<>();
     private static final double MARKER_RADIUS = 100; // 마커 생성 반경 (미터)
     private Random random = new Random();
-
-    private static final Double ZOOM_DEFAULT = 20.0;
-
-    private Polyline pathPolyline;
-    private List<GeoPoint> pathPoints;
-    private Button btnClearPath;
+    private Button btnAddFrontRv;
 
     /**
      * 액티비티가 생성될 때 호출되는 메서드입니다.
@@ -90,43 +88,47 @@ public class MainActivity extends AppCompatActivity {
         map.setScrollableAreaLimitLongitude(124.611, 132.000, 0);
         map.setMinZoomLevel(18.0);
         map.setMaxZoomLevel(22.0);
+        map.isTilesScaledToDpi();
 
         IMapController mapController = map.getController();
         mapController.setZoom(ZOOM_DEFAULT);
 
-        locationMarker = new Marker(map);
-        Drawable userIcon = ContextCompat.getDrawable(this, R.drawable.user_marker);
-        locationMarker.setIcon(userIcon);
-        map.getOverlays().add(locationMarker);
-
+        // 경로를 먼저 추가
         pathPolyline = new Polyline();
         pathPolyline.setColor(Color.BLUE);
         pathPolyline.setWidth(5f);
         pathPolyline.setGeodesic(true);
         map.getOverlays().add(pathPolyline);
+
+        locationMarker = new Marker(map);
+        Drawable userIcon = ContextCompat.getDrawable(this, R.drawable.icon_hv_marker);
+        locationMarker.setIcon(userIcon);
+        locationMarker.setAnchor(0.35f, 0.65f); // 앵커 포인트를 하단 중앙으로 변경
+        map.getOverlays().add(locationMarker);
     }
 
     /**
      * 사용자 인터페이스 버튼들을 초기화하고 이벤트 리스너를 설정하는 메서드입니다.
      */
     private void initializeButtons() {
-        btnMyLocation = findViewById(R.id.btnMyLocation);
+        btnHvLocation = findViewById(R.id.btnMyLocation);
         btnRotateToggle = findViewById(R.id.btnRotateToggle);
 
-        btnMyLocation.setOnClickListener(v -> moveMyLocation());
+        btnHvLocation.setOnClickListener(v -> moveHvLocation());
         btnRotateToggle.setOnClickListener(v -> toggleMapRotation());
 
-        // 조이스틱 버튼 초기화
+        // 조이스틱 버튼 초기화 -> 삭제 예정
         btnUp = findViewById(R.id.btnUp);
         btnDown = findViewById(R.id.btnDown);
         btnLeft = findViewById(R.id.btnLeft);
         btnRight = findViewById(R.id.btnRight);
 
-        // 조이스틱 버튼에 리스너 추가
+        // 조이스틱 버튼에 리스너 추가 -> 삭제 예정
         btnUp.setOnClickListener(v -> moveLocation(LATITUDE_DELTA, 0));
         btnDown.setOnClickListener(v -> moveLocation(-LATITUDE_DELTA, 0));
         btnLeft.setOnClickListener(v -> moveLocation(0, -LONGITUDE_DELTA));
         btnRight.setOnClickListener(v -> moveLocation(0, LONGITUDE_DELTA));
+
 
         btnAddMarkers = findViewById(R.id.btnAddMarkers);
         btnClearMarkers = findViewById(R.id.btnClearMarkers);
@@ -136,6 +138,9 @@ public class MainActivity extends AppCompatActivity {
 
         btnClearPath = findViewById(R.id.btnClearPath);
         btnClearPath.setOnClickListener(v -> clearPath());
+
+        btnAddFrontRv = findViewById(R.id.btnAddFrontRv);
+        btnAddFrontRv.setOnClickListener(v -> addFrontRv());
     }
 
     /**
@@ -161,14 +166,13 @@ public class MainActivity extends AppCompatActivity {
         IMapController mapController = map.getController();
 
         locationMarker.setPosition(currentLocation);
-        locationMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
         mapController.animateTo(currentLocation);
     }
 
     /**
      * 사용자의 현재 위치로 지도를 이동시키는 메서드입니다.
      */
-    private void moveMyLocation(){
+    private void moveHvLocation(){
         IMapController mapController = map.getController();
         mapController.setZoom(ZOOM_DEFAULT);
         updateMapLocation();
@@ -272,13 +276,13 @@ public class MainActivity extends AppCompatActivity {
      */
     private void addRandomMarkers() {
         clearRandomMarkers(); // 기존 마커 제거
-        int markerCount = random.nextInt(11); // 0~10개의 마커 생성
-        Drawable randomIcon = ContextCompat.getDrawable(this, R.drawable.random_marker);
+        int markerCount = random.nextInt(21); // 0~20개의 마커 생성
+        Drawable randomIcon = ContextCompat.getDrawable(this, R.drawable.icon_rv_marker);
         for (int i = 0; i < markerCount; i++) {
             GeoPoint randomPoint = getRandomPointInRadius(currentLocation, MARKER_RADIUS);
             Marker marker = new Marker(map);
             marker.setPosition(randomPoint);
-            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
+            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER);
             marker.setIcon(randomIcon);
             map.getOverlays().add(marker);
             randomMarkers.add(marker);
@@ -296,7 +300,7 @@ public class MainActivity extends AppCompatActivity {
         }
         randomMarkers.clear();
         map.invalidate();
-        Toast.makeText(this, "모든 랜덤 마커가 제거되었습니다.", Toast.LENGTH_SHORT).show();
+        Log.d(TAG, "clearRandomMarkers: 마커 재거 완료");
     }
 
     /**
@@ -345,5 +349,27 @@ public class MainActivity extends AppCompatActivity {
         pathPolyline.setPoints(pathPoints);
         map.invalidate();
         Toast.makeText(this, "경로가 초기화되었습니다.", Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * 사용자 위치 주변 5m 이내에 무작위로 front_rv를 추가하는 메서드입니다.
+     */
+    private void addFrontRv() {
+        if (frontRvMarker != null) {
+            map.getOverlays().remove(frontRvMarker);
+        }
+
+        GeoPoint frontRvPoint = getRandomPointInRadius(currentLocation, 5);
+        frontRvMarker = new Marker(map);
+        frontRvMarker.setPosition(frontRvPoint);
+        frontRvMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
+        
+        Drawable frontRvIcon = ContextCompat.getDrawable(this, R.drawable.icon_front_rv_marker);
+        frontRvMarker.setIcon(frontRvIcon);
+        
+        map.getOverlays().add(frontRvMarker);
+        map.invalidate();
+        
+        Toast.makeText(this, "Front RV가 추가되었습니다.", Toast.LENGTH_SHORT).show();
     }
 }

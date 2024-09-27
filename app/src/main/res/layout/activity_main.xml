@@ -96,6 +96,12 @@
             android:layout_height="wrap_content"
             android:text="마커 삭제"/>
 
+        <Button
+            android:id="@+id/btnAddFrontRv"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Front RV 추가"/>
+
     </LinearLayout>
 
     <Button

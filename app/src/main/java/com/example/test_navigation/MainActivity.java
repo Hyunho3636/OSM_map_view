@@ -1,24 +1,35 @@
 package com.example.test_navigation;
 
 import android.graphics.Color;
+import android.graphics.drawable.Drawable;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
+import android.widget.Button;
+import android.widget.ImageButton;
+import android.widget.TextView;
+import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import org.osmdroid.api.IMapController;
 import org.osmdroid.config.Configuration;
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory;
+import org.osmdroid.events.MapListener;
+import org.osmdroid.events.ScrollEvent;
+import org.osmdroid.events.ZoomEvent;
+import org.osmdroid.tileprovider.IRegisterReceiver;
+import org.osmdroid.tileprovider.modules.OfflineTileProvider;
+import org.osmdroid.tileprovider.tilesource.XYTileSource;
+import org.osmdroid.tileprovider.util.SimpleRegisterReceiver;
 import org.osmdroid.util.GeoPoint;
 import org.osmdroid.views.MapView;
 import org.osmdroid.views.overlay.Marker;
 import org.osmdroid.views.overlay.Polyline;
-import android.widget.Toast;
-import android.widget.Button;
-import android.widget.ImageButton;
+
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
-import android.graphics.drawable.Drawable;
-import androidx.core.content.ContextCompat;
 
 import static android.content.ContentValues.TAG;
 
@@ -29,16 +40,16 @@ import static android.content.ContentValues.TAG;
 public class MainActivity extends AppCompatActivity {
 
     private MapView map;
-    private Button btnHvLocation;
+    private ImageButton btnHvLocation;
     private ImageButton btnRotateToggle;
     private boolean isMapRotationEnabled = false;
     private float heading = 90f;
     private GeoPoint currentLocation;
     private Marker locationMarker;
-    private static final Double ZOOM_DEFAULT = 19.5;
+    private static final Double ZOOM_DEFAULT = 14.0;
     private Polyline pathPolyline;
     private List<GeoPoint> pathPoints;
-    private Button btnClearPath;
+    private ImageButton btnClearPath;
 
     private Marker frontRvMarker;
 
@@ -55,6 +66,10 @@ public class MainActivity extends AppCompatActivity {
     private static final double MARKER_RADIUS = 100; // 마커 생성 반경 (미터)
     private Random random = new Random();
     private Button btnAddFrontRv;
+    private TextView tvScaleBar;
+    private View scaleBarLine;
+
+    private static final String MBTILES_FILENAME = "south-korea-latest-non-military.mbtiles";
 
     /**
      * 액티비티가 생성될 때 호출되는 메서드입니다.
@@ -70,25 +85,43 @@ public class MainActivity extends AppCompatActivity {
 
         initializeMap();
         initializeButtons();
+        initializeScaleBar();
         setInitialLocation();
         initializePathTracking();
+
+        // mbtiles 파일 복사 작업 시작
+        new CopyMBTilesTask().execute(MBTILES_FILENAME);
+
     }
 
     /**
      * 지도를 초기화하고 설정하는 메서드입니다.
      * 지도 타일 소스, 줌 레벨, 스크롤 제한 등을 설정합니다.
+     * 또한 지도의 줌 이벤트를 감지하여 축적을 업데이트합니다.
      */
     private void initializeMap() {
         map = findViewById(R.id.map);
-        map.setTileSource(TileSourceFactory.MAPNIK);
+
+        // MBTiles 파일 경로 설정
+        File mbtilesFile = new File(getFilesDir(), MBTILES_FILENAME);
+
+        // XYTileSource 생성
+        XYTileSource tileSource = new XYTileSource("mbtiles", 16, 20, 256, ".png", new String[]{});
+
+        // SqlTileWriter 생성 및 설정
+        //SqlTileWriter writer = new SqliteArchiveTileWriter();
+        //writer.setDb(mbtilesFile);
+
+        // 맵 설정
+        map.setTileSource(tileSource);
         map.setMultiTouchControls(true);
         map.getZoomController().setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER);
 
         map.setScrollableAreaLimitLatitude(38.625, 33.112, 0);
         map.setScrollableAreaLimitLongitude(124.611, 132.000, 0);
-        map.setMinZoomLevel(18.0);
-        map.setMaxZoomLevel(22.0);
-        map.isTilesScaledToDpi();
+        map.setMinZoomLevel(10.0);
+        map.setMaxZoomLevel(14.0);
+        map.setTilesScaledToDpi(true);
 
         IMapController mapController = map.getController();
         mapController.setZoom(ZOOM_DEFAULT);
@@ -105,14 +138,28 @@ public class MainActivity extends AppCompatActivity {
         locationMarker.setIcon(userIcon);
         locationMarker.setAnchor(0.35f, 0.65f); // 앵커 포인트를 하단 중앙으로 변경
         map.getOverlays().add(locationMarker);
+
+        map.setTilesScaledToDpi(true);
+        map.addMapListener(new MapListener() {
+            @Override
+            public boolean onScroll(ScrollEvent event) {
+                return false;
+            }
+
+            @Override
+            public boolean onZoom(ZoomEvent event) {
+                updateScaleBar();
+                return false;
+            }
+        });
     }
 
     /**
      * 사용자 인터페이스 버튼들을 초기화하고 이벤트 리스너를 설정하는 메서드입니다.
      */
     private void initializeButtons() {
-        btnHvLocation = findViewById(R.id.btnMyLocation);
-        btnRotateToggle = findViewById(R.id.btnRotateToggle);
+        btnHvLocation = findViewById(R.id.map_center_button);
+        btnRotateToggle = findViewById(R.id.map_compass_button);
 
         btnHvLocation.setOnClickListener(v -> moveHvLocation());
         btnRotateToggle.setOnClickListener(v -> toggleMapRotation());
@@ -136,7 +183,7 @@ public class MainActivity extends AppCompatActivity {
         btnAddMarkers.setOnClickListener(v -> addRandomMarkers());
         btnClearMarkers.setOnClickListener(v -> clearRandomMarkers());
 
-        btnClearPath = findViewById(R.id.btnClearPath);
+        btnClearPath = findViewById(R.id.map_clear_path_button);
         btnClearPath.setOnClickListener(v -> clearPath());
 
         btnAddFrontRv = findViewById(R.id.btnAddFrontRv);
@@ -160,13 +207,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * 지도 위치를 업데이트하고 사용자 위치 마커를 이동시키는 메서드입니다.
+     * 지도 위치를 업데이트하고 사용자 위치 마커를 이동시키는 메서드입니��.
      */
     private void updateMapLocation() {
         IMapController mapController = map.getController();
 
         locationMarker.setPosition(currentLocation);
         mapController.animateTo(currentLocation);
+        updateScaleBar();
     }
 
     /**
@@ -363,13 +411,119 @@ public class MainActivity extends AppCompatActivity {
         frontRvMarker = new Marker(map);
         frontRvMarker.setPosition(frontRvPoint);
         frontRvMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
-        
+
         Drawable frontRvIcon = ContextCompat.getDrawable(this, R.drawable.icon_front_rv_marker);
         frontRvMarker.setIcon(frontRvIcon);
-        
+
         map.getOverlays().add(frontRvMarker);
         map.invalidate();
-        
+
         Toast.makeText(this, "Front RV가 추가되었습니다.", Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * 축적 표시 기능을 초기화하는 메서드입니다.
+     * TextView와 View를 찾아 연결하고 초기 축적을 업데이트합니다.
+     */
+    private void initializeScaleBar() {
+        tvScaleBar = findViewById(R.id.tv_scale_bar);
+        updateScaleBar();
+    }
+
+    /**
+     * 현재 지도의 줌 레벨과 중심 위치를 기반으로 축적을 계산하고 업데이트하는 메서드입니다.
+     * 계산된 축적은 미터 또는 킬로미터 단위로 TextView에 표시됩니다.
+     */
+    private void updateScaleBar() {
+        double zoomLevel = map.getZoomLevelDouble();
+        double latitude = map.getMapCenter().getLatitude();
+        double metersPerPixel = getMetersPerPixel(latitude, zoomLevel);
+        int screenWidth = map.getWidth();
+
+
+        float density = getResources().getDisplayMetrics().density;
+        Log.d(TAG, "density: " + density + "screenWidth: " + screenWidth);
+        int scaleBarWidthPixels = (int) (screenWidth / 10 / density); // 화면 너비의 10%
+
+        int scaleBarLengthMeters = (int)(scaleBarWidthPixels * metersPerPixel);
+
+        String scaleText;
+        if (scaleBarLengthMeters >= 1000) {
+            scaleText = String.format("%d km", scaleBarLengthMeters / 1000);
+        } else {
+            scaleText = String.format("%d m", scaleBarLengthMeters);
+        }
+
+        tvScaleBar.setText(scaleText);
+    }
+
+    /**
+     * 주어진 위도와 줌 레벨에 대한 미터당 픽셀 수를 계산합니다.
+     * @param latitude 위도
+     * @param zoomLevel 줌 레벨
+     * @return 미터당 픽셀 수
+     */
+    private double getMetersPerPixel(double latitude, double zoomLevel) {
+        // WGS84 타원체의 적도 반경 (미터)
+        final double earthRadius = 6378137;
+        // 타일 크기 (픽셀)
+        final int tileSize = 256;
+
+        return earthRadius * Math.cos(Math.toRadians(latitude)) * 2 * Math.PI / (tileSize * Math.pow(2, zoomLevel));
+    }
+
+    private class CopyMBTilesTask extends AsyncTask<String, Void, Boolean> {
+        @Override
+        protected Boolean doInBackground(String... params) {
+            String fileName = params[0];
+            return MapUtils.copyMBTilesToInternalStorage(MainActivity.this, fileName);
+        }
+
+        @Override
+        protected void onPostExecute(Boolean result) {
+            if (result) {
+                Toast.makeText(MainActivity.this, "mbtiles 파일 복사 완료", Toast.LENGTH_SHORT).show();
+                initializeOfflineMap();
+            } else {
+                Toast.makeText(MainActivity.this, "mbtiles 파일 복사 실패", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void initializeOfflineMap() {
+        // maps 디렉토리를 포함한 경로로 수정
+        File mbtilesFile = new File(getFilesDir(), "maps/" + MBTILES_FILENAME);
+
+        // 파일 경로를 로그에 출력
+        Log.d(TAG, "MBTiles 파일 경로: " + mbtilesFile.getAbsolutePath());
+
+        try {
+            // OfflineTileProvider 생성
+            IRegisterReceiver registerReceiver = new SimpleRegisterReceiver(this);
+            OfflineTileProvider tileProvider = new OfflineTileProvider(registerReceiver, new File[]{mbtilesFile});
+
+            // XYTileSource 생성
+            XYTileSource tileSource = new XYTileSource(
+                "mbtiles", 4, 14, 256, ".png",
+                new String[]{"http://localhost"} // 더미 URL
+            );
+
+            // 타일 소스를 타일 프로바이더에 설정
+            tileProvider.setTileSource(tileSource);
+
+            // 맵에 타일 프로바이더 설정
+            map.setTileProvider(tileProvider);
+
+            // 타일 소스 설정 로그 추가
+            Log.d(TAG, "타일 소스가 설정되었습니다: " + tileSource.name());
+
+            // 맵 갱신
+            map.invalidate();
+            Log.d(TAG, "맵이 갱신되었습니다.");
+        } catch (Exception e) {
+            e.printStackTrace();
+            Log.e(TAG, "오프라인 맵 초기화 실패: " + e.getMessage());
+            Toast.makeText(this, "오프라인 맵 초기화 실패: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
     }
 }

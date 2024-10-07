@@ -29,9 +29,7 @@ android {
 }
 
 dependencies {
-
-    implementation ("org.osmdroid:osmdroid-android:6.1.11")
-    implementation ("org.osmdroid:osmdroid-shape:6.1.11")
+    implementation ("org.osmdroid:osmdroid-android:6.1.14")
     implementation(libs.appcompat)
     implementation(libs.material)
     implementation(libs.activity)
